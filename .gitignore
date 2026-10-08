@@ -1,0 +1,21 @@
+# Kafka security secrets
+certs/*.key
+certs/*.p12
+certs/*.csr
+certs/*.srl
+certs/*.cnf
+certs/*-creds
+
+# Docker-mounted Kafka keystores and credentials
+certs/docker/*.p12
+certs/docker/*-creds
+
+# Python binary wheels
+producer/*.whl
+consumer/*.whl
+
+# Temporary / backup Compose files
+docker-compose.yml.backup
+docker-compose.yml.before-ssl
+docker-compose.yml.broken-ssl
+docker-compose.yml.ssl-edit-backup

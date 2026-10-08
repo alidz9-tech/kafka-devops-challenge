@@ -7,36 +7,35 @@ services:
 
     ports:
       - "9092:9092"
+      - "9095:9095"
 
     environment:
       KAFKA_NODE_ID: 1
-
       KAFKA_PROCESS_ROLES: broker,controller
-
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093,2@kafka-2:9093
 
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-1:9092
-
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://:9092,SSL://:9095,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-1:9092,SSL://kafka-1:9095
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,SSL:SSL
 
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
 
+      KAFKA_SSL_KEYSTORE_FILENAME: kafka-1.p12
+      KAFKA_SSL_KEY_CREDENTIALS: kafka-1-key-creds
+      KAFKA_SSL_KEYSTORE_CREDENTIALS: kafka-1-keystore-creds
+      KAFKA_SSL_KEYSTORE_TYPE: PKCS12
+
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
-
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 2
-
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
 
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
 
     volumes:
       - kafka-1-data:/var/lib/kafka/data
+      - ./certs/docker:/etc/kafka/secrets:ro
 
     networks:
       - kafka-net
@@ -49,48 +48,86 @@ services:
 
     ports:
       - "9094:9092"
+      - "9096:9095"
 
     environment:
       KAFKA_NODE_ID: 2
-
       KAFKA_PROCESS_ROLES: broker,controller
-
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093,2@kafka-2:9093
 
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-2:9092
-
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://:9092,SSL://:9095,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-2:9092,SSL://kafka-2:9095
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,SSL:SSL
 
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
 
+      KAFKA_SSL_KEYSTORE_FILENAME: kafka-2.p12
+      KAFKA_SSL_KEY_CREDENTIALS: kafka-2-key-creds
+      KAFKA_SSL_KEYSTORE_CREDENTIALS: kafka-2-keystore-creds
+      KAFKA_SSL_KEYSTORE_TYPE: PKCS12
+
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
-
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 2
-
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
 
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
 
     volumes:
       - kafka-2-data:/var/lib/kafka/data
+      - ./certs/docker:/etc/kafka/secrets:ro
 
     networks:
       - kafka-net
 
 
-volumes:
+  producer:
+    build:
+      context: ./producer
 
+    container_name: kafka-producer
+
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka-1:9092,kafka-2:9092
+      KAFKA_TOPIC: test-topic
+
+    depends_on:
+      - kafka-1
+      - kafka-2
+
+    networks:
+      - kafka-net
+
+    restart: unless-stopped
+
+
+  consumer:
+    build:
+      context: ./consumer
+
+    container_name: kafka-consumer
+
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka-1:9092,kafka-2:9092
+      KAFKA_TOPIC: test-topic
+      KAFKA_GROUP_ID: devops-challenge-consumer
+
+    depends_on:
+      - kafka-1
+      - kafka-2
+
+    networks:
+      - kafka-net
+
+    restart: unless-stopped
+
+
+volumes:
   kafka-1-data:
   kafka-2-data:
 
 
 networks:
-
   kafka-net:
     driver: bridge
