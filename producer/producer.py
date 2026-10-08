@@ -23,7 +23,7 @@ producer = Producer(
 
         # SASL + TLS
         "security.protocol": "SASL_SSL",
-        "sasl.mechanism": "SCRAM-SHA-256",
+        "sasl.mechanism": "PLAIN",
         "sasl.username": SASL_USERNAME,
         "sasl.password": SASL_PASSWORD,
 
