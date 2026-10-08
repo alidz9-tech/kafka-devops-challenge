@@ -19,3 +19,19 @@ docker-compose.yml.backup
 docker-compose.yml.before-ssl
 docker-compose.yml.broken-ssl
 docker-compose.yml.ssl-edit-backup
+
+# SASL/TLS lab backups and secrets
+certs/*.key
+certs/*.p12
+certs/*.csr
+certs/*.srl
+certs/*.cnf
+certs/*-creds
+certs/*-jaas.conf
+certs/docker/
+
+# Local backup files
+*.before-sasl
+docker-compose.yml.before-sasl
+certs/
+.env
