@@ -1,149 +1,74 @@
 #!/usr/bin/env python3
-"""
-Kafka DevOps Challenge - Unified Management CLI
-Author: Alireza Dashtizadeh
-Replaces: setup-certs.sh, create-topic.sh, healthcheck.sh, failover-test.sh, test-kafka.sh
-"""
+import os, sys, time, subprocess, argparse
 
-import os
-import sys
-import time
-import subprocess
-import argparse
+class C:
+    B='\033[94m'; G='\033[92m'; W='\033[93m'; F='\033[91m'; E='\033[0m'
 
-# --- تنظیمات رنگ برای خروجی زیبا در ترمینال ---
-class Colors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
+def log_i(m): print(f"{C.B}[INFO]{C.E} {m}")
+def log_s(m): print(f"{C.G}[PASS]{C.E} {m}")
+def log_e(m): print(f"{C.F}[FAIL]{C.E} {m}")
+def log_w(m): print(f"{C.W}[WARN]{C.E} {m}")
 
-def log_info(msg): print(f"{Colors.OKBLUE}[INFO]{Colors.ENDC} {msg}")
-def log_success(msg): print(f"{Colors.OKGREEN}[PASS]{Colors.ENDC} {msg}")
-def log_error(msg): print(f"{Colors.FAIL}[FAIL]{Colors.ENDC} {msg}")
-def log_warn(msg): print(f"{Colors.WARNING}[WARN]{Colors.ENDC} {msg}")
+def run_cap(cmd, check=True):
+    try: return subprocess.run(cmd, check=check, capture_output=True, text=True).stdout.strip()
+    except Exception as e: return ""
 
-def run_cmd(cmd, shell=False, check=True):
-    """اجرای دستورات سیستمی و مدیریت خطا"""
-    try:
-        result = subprocess.run(cmd, shell=shell, check=check, capture_output=True, text=True)
-        return result.stdout
-    except subprocess.CalledProcessError as e:
-        if check:
-            log_error(f"Command failed: {' '.join(cmd) if not shell else cmd}")
-            log_error(e.stderr.strip())
-            sys.exit(1)
-        return e.stdout
+def run_str(cmd, check=True):
+    try: subprocess.run(cmd, check=check, text=True)
+    except Exception as e: 
+        if check: log_e(f"Failed: {cmd}"); sys.exit(1)
 
-# --- 1. جایگزین setup-certs.sh ---
-def cmd_setup_certs(args):
-    log_info("Generating SSL/TLS Certificates and JAAS config...")
-    if os.path.exists("scripts/setup-certs.sh"):
-        run_cmd(["bash", "scripts/setup-certs.sh"])
-        log_success("Certificates generated successfully!")
-    else:
-        log_error("scripts/setup-certs.sh not found.")
+def cmd_setup(args):
+    log_i("Generating certs...")
+    if os.path.exists("scripts/setup-certs.sh"): run_str(["bash", "scripts/setup-certs.sh"]); log_s("Done!")
+    else: log_e("setup-certs.sh not found")
 
-# --- 2. جایگزین create-topic.sh ---
-def cmd_create_topic(args):
-    topic = args.topic
-    log_info(f"Creating topic '{topic}' with SASL_SSL...")
-    
-    client_conf = f"""security.protocol=SASL_SSL
-sasl.mechanism=PLAIN
-sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="admin-secret";
-ssl.truststore.location=/etc/kafka/secrets/kafka.truststore.p12
-ssl.truststore.password=changeit
-ssl.truststore.type=PKCS12
-"""
-    with open("/tmp/kafka_client.properties", "w") as f:
-        f.write(client_conf)
-    
-    run_cmd(["docker", "cp", "/tmp/kafka_client.properties", "kafka-1:/tmp/kafka_client.properties"])
-    
-    cmd = [
-        "docker", "exec", "kafka-1", "/opt/kafka/bin/kafka-topics.sh",
-        "--bootstrap-server", "kafka-1:9097",
-        "--command-config", "/tmp/kafka_client.properties",
-        "--create", "--topic", topic,
-        "--partitions", "3", "--replication-factor", "2",
-        "--if-not-exists"
-    ]
-    run_cmd(cmd)
-    log_success(f"Topic '{topic}' is ready!")
+def cmd_topic(args):
+    log_i(f"Creating topic {args.topic}...")
+    conf = 'security.protocol=SASL_SSL\nsasl.mechanism=PLAIN\nsasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="admin-secret";\nssl.truststore.location=/etc/kafka/secrets/kafka.truststore.p12\nssl.truststore.password=changeit\nssl.truststore.type=PKCS12'
+    with open("/tmp/kc.properties", "w") as f: f.write(conf)
+    run_str(["docker", "cp", "/tmp/kc.properties", "kafka-1:/tmp/kc.properties"])
+    run_str(["docker", "exec", "kafka-1", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "kafka-1:9097", "--command-config", "/tmp/kc.properties", "--create", "--topic", args.topic, "--partitions", "3", "--replication-factor", "2", "--if-not-exists"])
+    log_s(f"Topic {args.topic} ready!")
 
-# --- 3. جایگزین healthcheck.sh ---
-def cmd_healthcheck(args):
-    log_info("Starting Comprehensive Health Check...")
+def cmd_health(args):
+    log_i("Starting Health Check...")
     for c in ["kafka-1", "kafka-2", "message-producer", "message-consumer"]:
-        out = run_cmd(["docker", "inspect", "-f", "{{.State.Running}}", c], check=False).strip()
-        if out == "true": log_success(f"{c} is running")
-        else: log_error(f"{c} is NOT running"); return
+        if run_cap(["docker", "inspect", "-f", "{{.State.Running}}", c]) == "true": log_s(f"{c} running")
+        else: log_e(f"{c} NOT running"); return
+    log_i("Checking Quorum & Flow...")
+    if os.path.exists("scripts/healthcheck.sh"): run_str(["bash", "scripts/healthcheck.sh"])
+    else: log_w("healthcheck.sh missing")
 
-    log_info("Checking KRaft Quorum and Message Flow...")
-    if os.path.exists("scripts/healthcheck.sh"):
-        run_cmd(["bash", "scripts/healthcheck.sh"])
-    else:
-        log_warn("Full healthcheck logic requires scripts/healthcheck.sh")
+def cmd_fail(args):
+    log_w(f"Stopping {args.target}...")
+    run_str(["docker", "stop", args.target])
+    log_i("Waiting 15s..."); time.sleep(15)
+    rem = "kafka-2" if args.target == "kafka-1" else "kafka-1"
+    if run_cap(["docker", "inspect", "-f", "{{.State.Running}}", rem]) == "true": log_s("Cluster survived!")
+    else: log_e("Cluster failed!")
+    log_i(f"Restarting {args.target}..."); run_str(["docker", "start", args.target])
+    log_i("Waiting 20s..."); time.sleep(20); log_s("Failover test done.")
 
-# --- 4. جایگزین failover-test.sh ---
-def cmd_failover_test(args):
-    target = args.target
-    log_warn(f"Initiating Failover Test: Stopping {target}...")
-    run_cmd(["docker", "stop", target])
-    log_info(f"{target} stopped. Waiting 15 seconds for cluster stabilization...")
-    time.sleep(15)
-    
-    remaining = "kafka-2" if target == "kafka-1" else "kafka-1"
-    out = run_cmd(["docker", "inspect", "-f", "{{.State.Running}}", remaining], check=False).strip()
-    if out == "true":
-        log_success("Cluster survived the failure! Remaining node is active.")
-    else:
-        log_error("Cluster failed during failover test!")
-        
-    log_info(f"Restarting {target}...")
-    run_cmd(["docker", "start", target])
-    log_info("Waiting 20 seconds for replica recovery...")
-    time.sleep(20)
-    log_success("Failover test completed. Cluster should be fully recovered.")
+def cmd_test(args):
+    log_i("Quick test...")
+    if os.path.exists("scripts/test-kafka.sh"): run_str(["bash", "scripts/test-kafka.sh"])
+    else: log_e("test-kafka.sh missing")
 
-# --- 5. جایگزین test-kafka.sh ---
-def cmd_test_kafka(args):
-    log_info("Running quick Kafka message flow test...")
-    if os.path.exists("scripts/test-kafka.sh"):
-        run_cmd(["bash", "scripts/test-kafka.sh"])
-    else:
-        log_error("scripts/test-kafka.sh not found.")
-
-# --- تنظیمات CLI (Argparse) ---
 def main():
-    parser = argparse.ArgumentParser(description="Kafka DevOps Unified Manager")
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    p = argparse.ArgumentParser()
+    sp = p.add_subparsers(dest="cmd")
+    sp.add_parser("setup-certs")
+    pt = sp.add_parser("create-topic"); pt.add_argument("--topic", default="test-topic")
+    sp.add_parser("healthcheck")
+    pf = sp.add_parser("failover"); pf.add_argument("--target", choices=["kafka-1", "kafka-2"], default="kafka-1")
+    sp.add_parser("test")
+    a = p.parse_args()
+    if a.cmd == "setup-certs": cmd_setup(a)
+    elif a.cmd == "create-topic": cmd_topic(a)
+    elif a.cmd == "healthcheck": cmd_health(a)
+    elif a.cmd == "failover": cmd_fail(a)
+    elif a.cmd == "test": cmd_test(a)
+    else: p.print_help()
 
-    subparsers.add_parser("setup-certs", help="Generate SSL certs and JAAS config")
-
-    p_topic = subparsers.add_parser("create-topic", help="Create Kafka topic securely")
-    p_topic.add_argument("--topic", default="test-topic", help="Topic name")
-
-    subparsers.add_parser("healthcheck", help="Run full system health check")
-
-    p_fail = subparsers.add_parser("failover", help="Test cluster failover")
-    p_fail.add_argument("--target", choices=["kafka-1", "kafka-2"], default="kafka-1", help="Node to stop")
-
-    subparsers.add_parser("test", help="Quick message flow test")
-
-    args = parser.parse_args()
-
-    if args.command == "setup-certs": cmd_setup_certs(args)
-    elif args.command == "create-topic": cmd_create_topic(args)
-    elif args.command == "healthcheck": cmd_healthcheck(args)
-    elif args.command == "failover": cmd_failover_test(args)
-    elif args.command == "test": cmd_test_kafka(args)
-    else:
-        parser.print_help()
-
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()
