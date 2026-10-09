@@ -1,5 +1,35 @@
 # Kafka DevOps Challenge
 
+A production-style Apache Kafka setup using Docker Compose with a **Unified Python CLI** for seamless operations.
+
+## 🚀 Quick Start (Recommended)
+
+This project includes a unified management tool (`kafka_manager.py`) that automates all setup, testing, and health check tasks.
+
+**1. Clone and Configure:**
+\`\`\`bash
+git clone https://github.com/alidz9-tech/kafka-devops-challenge.git
+cd kafka-devops-challenge/kafka-devops-challenge
+cp .env.example .env
+\`\`\`
+
+**2. Setup and Launch with One Command:**
+\`\`\`bash
+# Generate certificates, start cluster, create topic, and run health check
+./kafka_manager.py setup-certs
+docker compose up --build -d
+./kafka_manager.py create-topic --topic test-topic
+./kafka_manager.py healthcheck
+\`\`\`
+
+**3. Test High Availability (Failover):**
+\`\`\`bash
+./kafka_manager.py failover --target kafka-1
+\`\`\`
+
+---
+
+
 A production-style Apache Kafka setup using Docker Compose with:
 
 * 2 Kafka brokers
@@ -431,3 +461,16 @@ Instead of running multiple bash scripts, use this unified interface:
 # Quick message flow test
 ./kafka_manager.py test
 ```
+
+## 🐍 Unified Management CLI Reference
+
+For advanced users, the `kafka_manager.py` tool supports the following commands:
+
+| Command | Description |
+| :--- | :--- |
+| `setup-certs` | Generates SSL/TLS certificates and JAAS configuration. |
+| `create-topic` | Creates the Kafka topic securely via SASL_SSL. |
+| `healthcheck` | Runs a comprehensive 6-step system validation. |
+| `failover` | Simulates broker failure and verifies cluster recovery. |
+| `test` | Performs a quick end-to-end message flow test. |
+
