@@ -2,11 +2,12 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY confluent_kafka-2.11.1-cp312-cp312-manylinux_2_28_x86_64.whl /tmp/
+RUN apt-get update && apt-get install -y gcc pkg-config \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir /tmp/confluent_kafka-2.11.1-cp312-cp312-manylinux_2_28_x86_64.whl
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY consumer.py .
 
 CMD ["python", "consumer.py"]
-
