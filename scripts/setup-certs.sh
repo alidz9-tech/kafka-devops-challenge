@@ -230,10 +230,10 @@ printf '%s' "$PASSWORD" > "$DOCKER_CERT_DIR/kafka-1-keystore-creds"
 printf '%s' "$PASSWORD" > "$DOCKER_CERT_DIR/kafka-2-key-creds"
 printf '%s' "$PASSWORD" > "$DOCKER_CERT_DIR/kafka-2-keystore-creds"
 
-chmod 640 "$DOCKER_CERT_DIR/kafka-1-key-creds"
-chmod 640 "$DOCKER_CERT_DIR/kafka-1-keystore-creds"
-chmod 640 "$DOCKER_CERT_DIR/kafka-2-key-creds"
-chmod 640 "$DOCKER_CERT_DIR/kafka-2-keystore-creds"
+chmod 644 "$DOCKER_CERT_DIR/kafka-1-key-creds"
+chmod 644 "$DOCKER_CERT_DIR/kafka-1-keystore-creds"
+chmod 644 "$DOCKER_CERT_DIR/kafka-2-key-creds"
+chmod 644 "$DOCKER_CERT_DIR/kafka-2-keystore-creds"
 
 cat > "$DOCKER_CERT_DIR/kafka_server_jaas.conf" <<EOF
 KafkaServer {
@@ -244,7 +244,7 @@ KafkaServer {
 };
 EOF
 
-chmod 640 "$DOCKER_CERT_DIR/kafka_server_jaas.conf"
+chmod 644 "$DOCKER_CERT_DIR/kafka_server_jaas.conf"
 
 echo "[PASS] Credential files created"
 
