@@ -64,7 +64,7 @@ docker compose version
 
 ```bash
 git clone git@github.com:alidz9-tech/kafka-devops-challenge.git
-cd kafka-devops-challenge/kafka-devops-challenge
+cd kafka-devops-challenge
 ```
 
 ## Environment Configuration
@@ -85,7 +85,7 @@ Example:
 
 ```env
 KAFKA_SASL_USERNAME=admin
-KAFKA_SASL_PASSWORD=admin-secret
+KAFKA_SASL_PASSWORD=replace-with-a-strong-password
 ```
 
 The Kafka brokers use the same SASL/PLAIN credentials.

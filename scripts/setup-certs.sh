@@ -2,6 +2,14 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Load project SASL credentials when .env exists.
+if [[ -f "$ROOT_DIR/.env" ]]; then
+    set -a
+    source "$ROOT_DIR/.env"
+    set +a
+fi
+KAFKA_SASL_USERNAME="${KAFKA_SASL_USERNAME:-admin}"
 CERT_DIR="$ROOT_DIR/certs"
 DOCKER_CERT_DIR="$CERT_DIR/docker"
 
@@ -235,12 +243,14 @@ chmod 644 "$DOCKER_CERT_DIR/kafka-1-keystore-creds"
 chmod 644 "$DOCKER_CERT_DIR/kafka-2-key-creds"
 chmod 644 "$DOCKER_CERT_DIR/kafka-2-keystore-creds"
 
+: "${KAFKA_SASL_PASSWORD:?Set KAFKA_SASL_PASSWORD in .env before creating JAAS config}"
+
 cat > "$DOCKER_CERT_DIR/kafka_server_jaas.conf" <<EOF
 KafkaServer {
   org.apache.kafka.common.security.plain.PlainLoginModule required
-  username="admin"
-  password="admin-secret"
-  user_admin="admin-secret";
+  username="${KAFKA_SASL_USERNAME}"
+  password="${KAFKA_SASL_PASSWORD}"
+  user_${KAFKA_SASL_USERNAME}="${KAFKA_SASL_PASSWORD}";
 };
 EOF
 
