@@ -409,4 +409,25 @@ The project has been validated with:
 * Invalid password rejection
 * Broker failover
 * Cluster recovery
+## 🐍 Unified Management CLI (New!)
 
+To simplify operations, all management tasks are now consolidated into a single Python CLI tool: `kafka_manager.py`.
+
+Instead of running multiple bash scripts, use this unified interface:
+
+```bash
+# Generate certificates
+./kafka_manager.py setup-certs
+
+# Create topic securely
+./kafka_manager.py create-topic --topic test-topic
+
+# Run comprehensive health check
+./kafka_manager.py healthcheck
+
+# Test cluster failover (High Availability)
+./kafka_manager.py failover --target kafka-1
+
+# Quick message flow test
+./kafka_manager.py test
+```
