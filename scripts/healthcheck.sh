@@ -1,9 +1,36 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
+cd "$(dirname "$0")/.."
+set -a
+source ./.env
+set +a
+: "${KAFKA_SASL_USERNAME:?Missing KAFKA_SASL_USERNAME}"
+: "${KAFKA_SASL_PASSWORD:?Missing KAFKA_SASL_PASSWORD}"
 
-BOOTSTRAP="kafka-1:9092"
+BOOTSTRAP="kafka-1:9097"
 TOPIC="test-topic"
+
+CFG="/tmp/healthcheck-client.properties"
+
+cleanup() {
+    docker exec kafka-1 rm -f "$CFG" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+docker exec \
+    -e KAFKA_SASL_USERNAME="$KAFKA_SASL_USERNAME" \
+    -e KAFKA_SASL_PASSWORD="$KAFKA_SASL_PASSWORD" \
+    kafka-1 bash -lc '
+        umask 077
+        cat > /tmp/healthcheck-client.properties <<EOF
+security.protocol=SASL_SSL
+sasl.mechanism=PLAIN
+sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_SASL_USERNAME}" password="${KAFKA_SASL_PASSWORD}";
+ssl.truststore.location=/etc/kafka/secrets/kafka.truststore.p12
+ssl.truststore.password=changeit
+ssl.truststore.type=PKCS12
+EOF
+    '
 
 echo "================================="
 echo " Kafka Health Check"
@@ -25,7 +52,7 @@ echo
 echo "[2/6] Checking Kafka broker..."
 
 if docker exec kafka-1 /opt/kafka/bin/kafka-broker-api-versions.sh \
-    --bootstrap-server "$BOOTSTRAP" >/dev/null 2>&1; then
+    --bootstrap-server "$BOOTSTRAP" --command-config "$CFG" >/dev/null 2>&1; then
     echo "[PASS] Kafka broker is reachable"
 else
     echo "[FAIL] Kafka broker is not reachable"
@@ -37,7 +64,7 @@ echo "[3/6] Checking KRaft quorum..."
 
 QUORUM_OUTPUT=$(docker exec kafka-1 \
     /opt/kafka/bin/kafka-metadata-quorum.sh \
-    --bootstrap-server "$BOOTSTRAP" \
+    --bootstrap-server "$BOOTSTRAP" --command-config "$CFG" \
     describe --status 2>/dev/null)
 
 echo "$QUORUM_OUTPUT"
@@ -54,7 +81,7 @@ echo "[4/6] Checking topic..."
 
 if docker exec kafka-1 \
     /opt/kafka/bin/kafka-topics.sh \
-    --bootstrap-server "$BOOTSTRAP" \
+    --bootstrap-server "$BOOTSTRAP" --command-config "$CFG" \
     --list | grep -qx "$TOPIC"; then
 
     echo "[PASS] Topic $TOPIC exists"
@@ -70,7 +97,7 @@ echo "[5/6] Checking replication and ISR..."
 
 TOPIC_OUTPUT=$(docker exec kafka-1 \
     /opt/kafka/bin/kafka-topics.sh \
-    --bootstrap-server "$BOOTSTRAP" \
+    --bootstrap-server "$BOOTSTRAP" --command-config "$CFG" \
     --describe \
     --topic "$TOPIC")
 
@@ -119,14 +146,14 @@ MESSAGE="healthcheck-$(date +%s)"
 echo "$MESSAGE" | docker exec -i kafka-1 \
     /opt/kafka/bin/kafka-console-producer.sh \
     --bootstrap-server "$BOOTSTRAP" \
-    --topic "$TOPIC" >/dev/null
+    --producer.config "$CFG" --topic "$TOPIC" >/dev/null
 
 if docker exec kafka-1 \
     /opt/kafka/bin/kafka-console-consumer.sh \
     --bootstrap-server "$BOOTSTRAP" \
-    --topic "$TOPIC" \
+    --consumer.config "$CFG" --topic "$TOPIC" \
     --from-beginning \
-    --timeout-ms 5000 2>/dev/null | grep -q "$MESSAGE"; then
+    --timeout-ms 5000 2>/dev/null | grep -F -- "$MESSAGE" >/dev/null; then
 
     echo "[PASS] Producer -> Kafka -> Consumer"
 
