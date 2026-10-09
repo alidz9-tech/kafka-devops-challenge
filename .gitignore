@@ -11,8 +11,6 @@ certs/docker/*.p12
 certs/docker/*-creds
 
 # Python binary wheels
-producer/*.whl
-consumer/*.whl
 
 # Temporary / backup Compose files
 docker-compose.yml.backup
