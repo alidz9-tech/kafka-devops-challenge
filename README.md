@@ -32,6 +32,78 @@ docker compose up --build -d
 
 ## Architecture
 
+## Architecture
+
+```mermaid
+graph TB
+    subgraph Client["Client Layer"]
+        P[Producer Application]
+        C[Consumer Application]
+        CLI[kafka_manager.py Unified CLI]
+    end
+
+    subgraph Security["Security Layer"]
+        TLS[TLS 1.3 Encryption<br/>Port 9097]
+        SASL[SASL/PLAIN Authentication<br/>Username: admin]
+        CERTS[SSL/TLS Certificates<br/>CA + Broker Keys]
+    end
+
+    subgraph KafkaCluster["Kafka Cluster - KRaft Mode"]
+        subgraph Broker1["kafka-1<br/>Controller + Broker"]
+            B1[Broker Process]
+            Q1[Quorum Member]
+        end
+        
+        subgraph Broker2["kafka-2<br/>Controller + Broker"]
+            B2[Broker Process]
+            Q2[Quorum Member]
+        end
+        
+        B1 <-->|Replication Factor: 2| B2
+        Q1 <-->|KRaft Consensus Protocol| Q2
+    end
+
+    subgraph Infrastructure["Docker Infrastructure"]
+        DC[Docker Compose Orchestration]
+        NET[Docker Network]
+        VOL[Persistent Volumes]
+    end
+
+    %% Message Flow
+    P -->|Produce Messages via SSL| TLS
+    C -->|Consume Messages via SSL| TLS
+    CLI -->|Manage Topics & Operations| SASL
+    
+    %% Security to Kafka
+    TLS -->|Encrypted Traffic| B1
+    TLS -->|Encrypted Traffic| B2
+    SASL -->|Authenticate Requests| B1
+    SASL -->|Authenticate Requests| B2
+    
+    %% Certificate Management
+    CERTS -->|Enable Secure Communication| TLS
+    CERTS -->|JAAS Configuration| SASL
+    
+    %% Data Persistence
+    B1 -->|Store Messages| VOL
+    B2 -->|Store Messages| VOL
+    
+    %% Docker Orchestration
+    DC -->|Container Management| Broker1
+    DC -->|Container Management| Broker2
+    NET -->|Network Isolation| KafkaCluster
+
+    %% Styling
+    classDef client fill:#e3f2fd,stroke:#1976d2,stroke-width:3px,color:#0d47a1
+    classDef security fill:#fff3e0,stroke:#f57c00,stroke-width:3px,color:#e65100
+    classDef kafka fill:#e8f5e9,stroke:#388e3c,stroke-width:3px,color:#1b5e20
+    classDef infra fill:#f3e5f5,stroke:#7b1fa2,stroke-width:3px,color:#4a148c
+    
+    class P,C,CLI client
+    class TLS,SASL,CERTS security
+    class B1,B2,Q1,Q2,Broker1,Broker2,KafkaCluster kafka
+    class DC,NET,VOL,Infrastructure infra
+
 ```text
 Producer --> Kafka Cluster (KRaft + SASL_SSL) --> Consumer
            [kafka-1] <--> [kafka-2]
