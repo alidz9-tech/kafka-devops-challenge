@@ -259,6 +259,7 @@ chmod 644 "$DOCKER_CERT_DIR/kafka_server_jaas.conf"
 echo "[PASS] Credential files created"
 
 echo
+chmod -R a+r "$DOCKER_CERT_DIR" && chmod a+x "$DOCKER_CERT_DIR"
 echo "[7/7] Cleaning temporary files..."
 
 rm -f "$KAFKA1_CSR" "$KAFKA2_CSR"
