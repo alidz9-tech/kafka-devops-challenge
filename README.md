@@ -1,17 +1,22 @@
-# Kafka DevOps Challenge
+# Kafka DevOps Challenge 🚀
 
-A production-style Apache Kafka setup using Docker Compose with a **Unified Python CLI** for seamless operations.
+A robust, secure, and automated Kafka cluster setup using Docker Compose with SASL_SSL authentication. This project includes a custom Python CLI tool (`kafka_manager.py`) for seamless management of Kafka operations.
 
-> 💡 **Note for Evaluators:**  
-> While the underlying Bash scripts in the `scripts/` directory handle low-level system tasks (OpenSSL, Keytool, Docker Exec), **you do not need to run them manually**.  
-> All operations are fully automated and orchestrated through the unified `kafka_manager.py` CLI tool.
+## ✨ Features
+- **Secure Communication:** End-to-end encryption using TLS/SSL (PKCS12 keystores).
+- **Authentication:** SASL/PLAIN mechanism for secure client-broker communication.
+- **High Availability:** Multi-broker cluster (kafka-1, kafka-2) with automatic failover support.
+- **Automated Tooling:** A unified CLI tool for certificate generation, topic management, and health checks.
+- **Dockerized:** Easy deployment using Docker Compose.
 
-## 🚀 Quick Start (Recommended)
+## 🛠️ Prerequisites
+- Docker & Docker Compose
+- Python 3.x
+- OpenSSL & Java Keytool (for certificate generation)
 
-This project includes a unified management tool (`kafka_manager.py`) that automates all setup, testing, and health check tasks.
+## 🚀 Quick Start
 
-**1. Clone and Configure:**
+### 1. Setup Certificates
+Generate the necessary TLS certificates and keystores:
 ```bash
-git clone https://github.com/alidz9-tech/kafka-devops-challenge.git
-cd kafka-devops-challenge
-cp .env.example .env
+./kafka_manager.py setup-certs
