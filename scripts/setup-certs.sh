@@ -28,6 +28,7 @@ KAFKA2_CSR="$CERT_DIR/kafka-2.csr"
 KAFKA1_P12="$DOCKER_CERT_DIR/kafka-1.p12"
 KAFKA2_P12="$DOCKER_CERT_DIR/kafka-2.p12"
 TRUSTSTORE="$DOCKER_CERT_DIR/kafka.truststore.p12"
+CLIENT_TRUSTSTORE="$DOCKER_CERT_DIR/client.truststore.p12"
 
 PASSWORD="changeit"
 
@@ -48,6 +49,7 @@ REQUIRED_FILES=(
     "$KAFKA1_P12"
     "$KAFKA2_P12"
     "$TRUSTSTORE"
+    "$CLIENT_TRUSTSTORE"
     "$DOCKER_CERT_DIR/kafka-1-key-creds"
     "$DOCKER_CERT_DIR/kafka-1-keystore-creds"
     "$DOCKER_CERT_DIR/kafka-2-key-creds"
@@ -230,6 +232,19 @@ keytool -importcert \
     -storepass "$PASSWORD"
 
 echo "[PASS] Truststore generated"
+   echo
+   echo "[5b/7] Generating client truststore..."
+   
+   keytool -importcert \
+       -noprompt \
+       -trustcacerts \
+       -alias kafka-devops-ca \
+       -file "$CA_CRT" \
+       -keystore "$CLIENT_TRUSTSTORE" \
+       -storetype PKCS12 \
+       -storepass "$PASSWORD"
+   
+   echo "[PASS] Client truststore generated"
 
 echo
 echo "[6/7] Creating credential files..."
