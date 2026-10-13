@@ -1,4 +1,5 @@
 #!/bin/bash
+source .env
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
