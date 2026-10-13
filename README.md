@@ -1,5 +1,8 @@
-# Test Table
+# Kafka DevOps Challenge
 
-| A | B |
+## Commands
+
+|Command|Description|
 |---|---|
-| 1 | 2 |
+|setup-certs|Generates certs|
+|create-topic|Creates topic|
