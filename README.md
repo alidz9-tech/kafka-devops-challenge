@@ -1,14 +1,5 @@
-# Kafka DevOps Challenge 🚀
+# Test Table
 
-A robust Kafka cluster setup with SASL_SSL.
-
-## 📋 Available Commands
-
-| Command | Description |
-| --- | --- |
-| setup-certs | Generates certificates |
-| create-topic | Creates a topic |
-| healthcheck | Checks cluster health |
-
-## 🔐 Security
-Credentials are managed via .env file.
+| A | B |
+|---|---|
+| 1 | 2 |
