@@ -74,11 +74,13 @@ docker logs -f message-consumer
 | --- | --- |
 | `./kafka_manager.py setup-certs` | Generates the CA, broker certificates, PKCS12 keystores, truststores and the JAAS file |
 | `./kafka_manager.py create-topic --topic test-topic` | Creates the topic over `SASL_SSL` |
-| `./kafka_manager.py healthcheck` | Checks containers, SASL_SSL connection, KRaft quorum, topic, partitions and ISR |
+| `./kafka_manager.py healthcheck` | Checks containers, SASL_SSL connection, KRaft quorum, topic, partitions, ISR and producer-to-consumer message flow. Exits non-zero on any failure |
 | `./kafka_manager.py test` | Sends a message and reads it back with a temporary consumer |
-| `./kafka_manager.py failover --target kafka-1` | Stops one broker, waits, checks the other is running, restarts it |
+| `./kafka_manager.py failover --target kafka-1` | Stops one broker, checks the other, restarts it, waits for full ISR recovery and verifies message flow again |
 
 The same operations are available as plain scripts in `scripts/`.
+
+Note: both nodes are KRaft controllers (a 2-voter quorum), so while one node is down the cluster cannot elect new leaders. The failover test therefore requires full recovery after the node returns; producing during the outage is only reported.
 
 ## Security
 

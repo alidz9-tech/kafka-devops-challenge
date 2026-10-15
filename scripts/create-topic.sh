@@ -1,5 +1,4 @@
 #!/bin/bash
-source .env
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -16,6 +15,8 @@ set +a
 : "${KAFKA_SASL_USERNAME:?Missing KAFKA_SASL_USERNAME}"
 : "${KAFKA_SASL_PASSWORD:?Missing KAFKA_SASL_PASSWORD}"
 
+TOPIC_NAME="${1:-test-topic}"
+
 echo "================================="
 echo " Kafka Topic Setup (SASL_SSL)"
 echo "================================="
@@ -23,11 +24,12 @@ echo "================================="
 docker exec \
     -e KAFKA_SASL_USERNAME="$KAFKA_SASL_USERNAME" \
     -e KAFKA_SASL_PASSWORD="$KAFKA_SASL_PASSWORD" \
+    -e TOPIC_NAME="$TOPIC_NAME" \
     kafka-1 bash -lc '
 set -euo pipefail
 
 BOOTSTRAP="kafka-1:9097"
-TOPIC="test-topic"
+TOPIC="$TOPIC_NAME"
 CFG=$(mktemp)
 trap '\''rm -f "$CFG"'\'' EXIT
 umask 077

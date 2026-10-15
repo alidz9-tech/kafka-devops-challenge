@@ -1,29 +1,31 @@
 #!/bin/bash
-source .env
-set -euo pipefail
+# Kafka health check. Exits 0 only when every check passes.
+set -uo pipefail
 
-cd "$(dirname "$0")/.."
+# shellcheck source=scripts/lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+load_env
 
-if [[ ! -f .env ]]; then
-    echo "[FAIL] .env file not found"
-    # exit 1  # Non-critical failure
-fi
-
-set -a
-source ./.env
-set +a
-
-: "${KAFKA_SASL_USERNAME:?Missing KAFKA_SASL_USERNAME}"
-: "${KAFKA_SASL_PASSWORD:?Missing KAFKA_SASL_PASSWORD}"
-
-BOOTSTRAP="kafka-1:9097"
-TOPIC="test-topic"
 CFG="/tmp/healthcheck-client.properties"
+CLIENT=""
 
 cleanup() {
-    docker exec kafka-1 rm -f "$CFG" >/dev/null 2>&1 || true
+    [[ -n "$CLIENT" ]] && docker exec "$CLIENT" rm -f "$CFG" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
+
+finish() {
+    echo
+    echo "================================="
+    if (( FAILED == 0 )); then
+        echo " RESULT: HEALTHY"
+        echo "================================="
+        exit 0
+    fi
+    echo " RESULT: UNHEALTHY"
+    echo "================================="
+    exit 1
+}
 
 echo "================================="
 echo " Kafka Health Check (SASL_SSL)"
@@ -31,106 +33,97 @@ echo "================================="
 
 echo
 echo "[1/6] Checking containers..."
-for container in kafka-1 kafka-2; do
-    if [[ "$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null || true)" == "true" ]]; then
-        echo "[PASS] $container is running"
+for c in kafka-1 kafka-2 message-producer message-consumer; do
+    if is_running "$c"; then
+        pass "$c is running"
     else
-        echo "[FAIL] $container is not running"
-        # exit 1  # Non-critical failure
+        fail "$c is not running"
     fi
 done
 
-echo
-echo "[2/6] Preparing secure client configuration..."
-docker exec     -e KAFKA_SASL_USERNAME="$KAFKA_SASL_USERNAME"     -e KAFKA_SASL_PASSWORD="$KAFKA_SASL_PASSWORD"     kafka-1 bash -lc '
-        umask 077
-        printf "%s\n"           "security.protocol=SASL_SSL"           "sasl.mechanism=PLAIN"           "sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${KAFKA_SASL_USERNAME}\" password=\"${KAFKA_SASL_PASSWORD}\";"           "ssl.truststore.location=/etc/kafka/secrets/kafka.truststore.p12"           "ssl.truststore.password=changeit"           "ssl.truststore.type=PKCS12" > /tmp/healthcheck-client.properties
-    '
-
-if docker exec kafka-1 /opt/kafka/bin/kafka-broker-api-versions.sh     --bootstrap-server "$BOOTSTRAP"     --command-config "$CFG" >/dev/null 2>&1; then
-    echo "[PASS] SASL_SSL broker connection"
+if is_running kafka-1; then
+    CLIENT="kafka-1"
+elif is_running kafka-2; then
+    CLIENT="kafka-2"
 else
-    echo "[FAIL] SASL_SSL broker connection"
-    # exit 1  # Non-critical failure
+    fail "No Kafka broker is running, cannot continue"
+    finish
+fi
+
+echo
+echo "[2/6] Checking SASL_SSL connection (via $CLIENT)..."
+if ! write_client_config "$CLIENT" "$CFG"; then
+    fail "Could not write client configuration into $CLIENT"
+    finish
+fi
+if kafka_cmd "$CLIENT" "$CFG" kafka-broker-api-versions.sh >/dev/null 2>&1; then
+    pass "SASL_SSL broker connection"
+else
+    fail "SASL_SSL broker connection (check .env credentials and certificates)"
+    finish
 fi
 
 echo
 echo "[3/6] Checking KRaft quorum..."
-QUORUM_OUTPUT=$(docker exec kafka-1     /opt/kafka/bin/kafka-metadata-quorum.sh     --bootstrap-server "$BOOTSTRAP"     --command-config "$CFG" describe --status)
-
-echo "$QUORUM_OUTPUT"
-if echo "$QUORUM_OUTPUT" | grep -q "CurrentVoters:"; then
-    echo "[PASS] KRaft quorum status retrieved"
+if QUORUM="$(kafka_cmd "$CLIENT" "$CFG" kafka-metadata-quorum.sh describe --status 2>&1)"; then
+    echo "$QUORUM"
+    if grep -q "CurrentVoters:" <<<"$QUORUM" && grep -Eq 'LeaderId:[[:space:]]+[0-9]+' <<<"$QUORUM"; then
+        pass "KRaft quorum has a leader"
+    else
+        fail "KRaft quorum has no leader or no voters"
+    fi
 else
-    echo "[FAIL] KRaft quorum unavailable"
-    # exit 1  # Non-critical failure
+    echo "$QUORUM"
+    fail "KRaft quorum status unavailable"
 fi
 
 echo
 echo "[4/6] Checking topic..."
-if docker exec kafka-1 /opt/kafka/bin/kafka-topics.sh     --bootstrap-server "$BOOTSTRAP" --command-config "$CFG" --list |
-    grep -qx "$TOPIC"; then
-    echo "[PASS] Topic $TOPIC exists"
+if kafka_cmd "$CLIENT" "$CFG" kafka-topics.sh --list 2>/dev/null | grep -qx "$TOPIC"; then
+    pass "Topic $TOPIC exists"
 else
-    echo "[FAIL] Topic $TOPIC does not exist"
-    # exit 1  # Non-critical failure
+    fail "Topic $TOPIC does not exist (run: ./kafka_manager.py create-topic)"
+    finish
 fi
 
 echo
-echo "[5/6] Checking replication and ISR..."
-TOPIC_OUTPUT=$(docker exec kafka-1     /opt/kafka/bin/kafka-topics.sh     --bootstrap-server "$BOOTSTRAP"     --command-config "$CFG" --describe --topic "$TOPIC")
-echo "$TOPIC_OUTPUT"
-
-PARTITION_COUNT=$(echo "$TOPIC_OUTPUT" | grep -c "Partition:")
-if [[ "$PARTITION_COUNT" -eq 3 ]]; then
-    echo "[PASS] Partition count: $PARTITION_COUNT"
+echo "[5/6] Checking partitions, replication and ISR..."
+if TOPIC_OUTPUT="$(kafka_cmd "$CLIENT" "$CFG" kafka-topics.sh --describe --topic "$TOPIC" 2>&1)"; then
+    echo "$TOPIC_OUTPUT"
+    PARTITIONS="$(grep -c "Partition:" <<<"$TOPIC_OUTPUT" || true)"
+    if (( PARTITIONS == 3 )); then
+        pass "Partition count: 3"
+    else
+        fail "Expected 3 partitions, found $PARTITIONS"
+    fi
+    if grep -q "ReplicationFactor: 2" <<<"$TOPIC_OUTPUT"; then
+        pass "Replication factor: 2"
+    else
+        fail "Expected replication factor 2"
+    fi
+    BAD="$(bad_isr_lines <<<"$TOPIC_OUTPUT")"
+    if [[ -z "$BAD" ]]; then
+        pass "All replicas are in ISR"
+    else
+        fail "Replica/ISR mismatch:"
+        echo "$BAD"
+    fi
 else
-    echo "[FAIL] Expected 3 partitions, found $PARTITION_COUNT"
-    # exit 1  # Non-critical failure
-fi
-
-if echo "$TOPIC_OUTPUT" | grep -q "ReplicationFactor: 2"; then
-    echo "[PASS] Replication factor: 2"
-else
-    echo "[FAIL] Expected replication factor 2"
-    # exit 1  # Non-critical failure
-fi
-
-BAD_ISR=$(echo "$TOPIC_OUTPUT" | grep "Partition:" | awk '
-{
-    replicas = ""
-    isr = ""
-    for (i=1; i<=NF; i++) {
-        if ($i == "Replicas:") replicas=$(i+1)
-        if ($i == "Isr:") isr=$(i+1)
-    }
-    nr = split(replicas, r, ",")
-    ns = split(isr, s, ",")
-    if (replicas == "" || isr == "" || nr != ns) print
-}')
-if [[ -z "$BAD_ISR" ]]; then
-    echo "[PASS] All replicas are in ISR"
-else
-    echo "[FAIL] Replica/ISR mismatch"
-    echo "$BAD_ISR"
-    # exit 1  # Non-critical failure
+    echo "$TOPIC_OUTPUT"
+    fail "Could not describe topic $TOPIC"
 fi
 
 echo
-echo "[6/6] Checking message flow..."
-
-# تست ساده: ارسال یک پیام و بررسی اینکه broker آن را پذیرفته
-FLOW_MSG="flow-test-$(date +%s)"
-if echo "$FLOW_MSG" | docker exec -i kafka-1 \
-    /opt/kafka/bin/kafka-console-producer.sh \
-    --bootstrap-server "$BOOTSTRAP" \
-    --producer.config "$CFG" \
-    --topic "$TOPIC" >/dev/null 2>&1; then
-    echo "[PASS] Producer -> Kafka (message accepted)"
+echo "[6/6] Checking message flow (producer -> Kafka -> message-consumer)..."
+if send_marker "healthcheck" "$CLIENT" "$CFG"; then
+    pass "Message accepted by Kafka"
+    if wait_for_consumer "$MARKER" 30; then
+        pass "message-consumer received: $MARKER"
+    else
+        fail "message-consumer did not receive the test message within 30s"
+    fi
 else
-    echo "[WARN] Message flow test inconclusive"
+    fail "Could not produce a test message"
 fi
 
-echo "================================="
-echo " RESULT: HEALTHY"
-echo "================================="
+finish

@@ -1,156 +1,63 @@
 #!/usr/bin/env python3
-"""Unified Kafka Management CLI for DevOps Challenge."""
+"""Unified management CLI for the Kafka DevOps challenge.
 
+A thin wrapper around the scripts in ./scripts. Output is streamed live and the
+exit code of the underlying script is returned, so a failing check fails the command.
+"""
+
+import argparse
 import subprocess
 import sys
-import time
-import os
 from pathlib import Path
 
-# Load environment variables from .env file if present
-env_file = Path('.env')
-if env_file.exists():
-    with open(env_file) as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith('#') and '=' in line:
-                key, value = line.split('=', 1)
-                os.environ[key.strip()] = value.strip()
+ROOT = Path(__file__).resolve().parent
+SCRIPTS = ROOT / "scripts"
 
-# Configuration from Environment Variables
-KAFKA_USER = os.getenv('KAFKA_SASL_USERNAME', 'admin')
-KAFKA_PASS = os.getenv('KAFKA_SASL_PASSWORD', 'admin-secret')
-TRUSTSTORE_PASS = os.getenv('KAFKA_TRUSTSTORE_PASSWORD', 'changeit')
-BOOTSTRAP_SERVER = "kafka-1:9097"
-TOPIC_NAME = "test-topic"
-PARTITIONS = 3
-REPLICATION_FACTOR = 2
 
-def run_cmd(cmd, check=True):
-    """Run a shell command and return output."""
+def run_script(name, *args):
+    script = SCRIPTS / name
+    if not script.is_file():
+        print(f"[FAIL] {script} not found", file=sys.stderr)
+        return 1
     try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=check)
-        return result.stdout.strip(), result.stderr.strip(), result.returncode
-    except subprocess.CalledProcessError as e:
-        if check:
-            print(f"[ERROR] Command failed: {cmd}")
-            print(e.stderr)
-            sys.exit(1)
-        return "", e.stderr, e.returncode
+        return subprocess.run(["bash", str(script), *args], cwd=ROOT).returncode
+    except KeyboardInterrupt:
+        print("\n[WARN] Interrupted")
+        return 130
 
-def setup_certs():
-    print("[INFO] Setting up certificates...")
-    run_cmd("chmod +x scripts/setup-certs.sh && ./scripts/setup-certs.sh")
-    print("[PASS] Certificates generated.")
 
-def create_topic(topic=None):
-    topic = topic or TOPIC_NAME
-    print(f"[INFO] Creating topic: {topic}...")
-    
-    # Using docker exec with environment variables passed dynamically
-    cmd = (
-        f'docker exec kafka-1 /opt/kafka/bin/kafka-topics.sh '
-        f'--bootstrap-server {BOOTSTRAP_SERVER} '
-        f'--command-config <(echo -e "security.protocol=SASL_SSL\nsasl.mechanism=PLAIN\nsasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"{KAFKA_USER}\" password=\"{KAFKA_PASS}\";") '
-        f'--create --topic {topic} --partitions {PARTITIONS} --replication-factor {REPLICATION_FACTOR}'
+def main():
+    parser = argparse.ArgumentParser(
+        description="Manage the Kafka DevOps challenge environment.",
     )
-    
-    # Note: Process substitution <() might not work directly in subprocess.run with shell=True in some contexts. 
-    # A safer way is to create a temp config file.
-    config_content = f"""security.protocol=SASL_SSL
-sasl.mechanism=PLAIN
-sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="{KAFKA_USER}" password="{KAFKA_PASS}";
-ssl.truststore.location=/etc/kafka/secrets/client.truststore.p12
-ssl.truststore.password={TRUSTSTORE_PASS}
-ssl.truststore.type=PKCS12
-"""
-    with open('/tmp/client.properties', 'w') as f:
-        f.write(config_content)
-        
-    # Copy config to container
-    run_cmd("docker cp /tmp/client.properties kafka-1:/tmp/client.properties")
-    
-    cmd = (
-        f'docker exec kafka-1 /opt/kafka/bin/kafka-topics.sh '
-        f'--bootstrap-server {BOOTSTRAP_SERVER} '
-        f'--command-config /tmp/client.properties '
-        f'--create --topic {topic} --partitions {PARTITIONS} --replication-factor {REPLICATION_FACTOR}'
-    )
-    
-    out, err, code = run_cmd(cmd, check=False)
-    if "already exists" in err or code == 0:
-        print(f"[PASS] Topic '{topic}' is ready.")
-    else:
-        print(f"[WARN] {err}")
+    sub = parser.add_subparsers(dest="command", required=True, metavar="command")
 
-def healthcheck():
-    print("[INFO] Starting Health Check...")
-    
-    # 1. Check Containers
-    containers = ['kafka-1', 'kafka-2', 'message-producer', 'message-consumer']
-    for c in containers:
-        out, _, _ = run_cmd(f"docker ps -q -f name={c}", check=False)
-        if out:
-            print(f"[PASS] {c} running")
-        else:
-            print(f"[FAIL] {c} is NOT running")
-            return
+    sub.add_parser("setup-certs", help="generate CA, broker certificates, keystores and JAAS file")
 
-    print("[INFO] Checking Quorum & Flow...")
-    print("=================================")
-    print(" Kafka Health Check (SASL_SSL)")
-    print("=================================")
-    
-    # Run the detailed bash healthcheck script which uses env vars correctly
-    run_cmd("./scripts/healthcheck.sh")
+    topic = sub.add_parser("create-topic", help="create the topic over SASL_SSL (3 partitions, RF 2)")
+    topic.add_argument("--topic", default="test-topic", help="topic name (default: test-topic)")
 
-def test_flow():
-    print("[INFO] Quick test...")
-    print("=================================")
-    print(" Kafka DevOps Challenge Test")
-    print(" Secure connection: SASL_SSL")
-    print("=================================")
-    run_cmd("./scripts/test-kafka.sh")
+    sub.add_parser("healthcheck", help="check containers, SASL_SSL, KRaft quorum, topic, ISR and message flow")
+    sub.add_parser("test", help="send a message and read it back with a temporary consumer")
 
-def failover(target="kafka-1"):
-    print(f"[WARN] Stopping {target}...")
-    run_cmd(f"docker stop {target}")
-    print("[INFO] Waiting 15s for cluster to adjust...")
-    time.sleep(15)
-    
-    # Check if the other broker is still alive and leading
-    other = "kafka-2" if target == "kafka-1" else "kafka-1"
-    out, _, _ = run_cmd(f"docker ps -q -f name={other}", check=False)
-    if out:
-        print("[PASS] Cluster survived! Other broker is active.")
-    else:
-        print("[FAIL] Cluster failed!")
-        
-    print(f"[INFO] Restarting {target}...")
-    run_cmd(f"docker start {target}")
-    print("[INFO] Waiting 20s for recovery...")
-    time.sleep(20)
-    print("[PASS] Failover test done.")
+    failover = sub.add_parser("failover", help="stop one broker, verify recovery, check message flow")
+    failover.add_argument("--target", choices=["kafka-1", "kafka-2"], default="kafka-1",
+                          help="broker to stop (default: kafka-1)")
+
+    args = parser.parse_args()
+
+    if args.command == "setup-certs":
+        return run_script("setup-certs.sh")
+    if args.command == "create-topic":
+        return run_script("create-topic.sh", args.topic)
+    if args.command == "healthcheck":
+        return run_script("healthcheck.sh")
+    if args.command == "test":
+        return run_script("test-kafka.sh")
+    if args.command == "failover":
+        return run_script("failover-test.sh", args.target)
+    return 2
+
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: ./kafka_manager.py [setup-certs|create-topic|healthcheck|test|failover]")
-        sys.exit(1)
-        
-    command = sys.argv[1]
-    if command == "setup-certs":
-        setup_certs()
-    elif command == "create-topic":
-        topic = None
-        if "--topic" in sys.argv:
-            topic = sys.argv[sys.argv.index("--topic") + 1]
-        create_topic(topic)
-    elif command == "healthcheck":
-        healthcheck()
-    elif command == "test":
-        test_flow()
-    elif command == "failover":
-        target = "kafka-1"
-        if "--target" in sys.argv:
-            target = sys.argv[sys.argv.index("--target") + 1]
-        failover(target)
+    sys.exit(main())
