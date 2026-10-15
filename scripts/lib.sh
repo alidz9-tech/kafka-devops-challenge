@@ -1,4 +1,5 @@
 #!/bin/bash
+source .env
 # Shared helpers for the Kafka challenge scripts.
 # Source this file from another script; it is not meant to be executed directly.
 
